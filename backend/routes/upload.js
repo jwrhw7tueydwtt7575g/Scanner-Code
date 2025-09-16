@@ -4,6 +4,7 @@ const AdmZip = require('adm-zip');
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const fs = require('fs');
 const path = require('path');
+const Project = require('../models/Project');
 
 const router = express.Router();
 
@@ -45,6 +46,15 @@ router.post('/upload', upload.single('file'), async (req, res) => {
     }
     fs.unlinkSync(zipPath); // Clean up uploaded zip
     timeline.push({ step: 'Upload complete', time: new Date().toISOString() });
+    // Save project info to DB
+    const project = new Project({
+      name: path.basename(req.file.originalname, '.zip'),
+      fileCount: uploadedFiles.length,
+      uploadTime: new Date(),
+      status: 'completed',
+      files: uploadedFiles
+    });
+    await project.save();
     res.status(200).json({ message: 'Files extracted and uploaded to S3.', uploadedFiles, timeline });
   } catch (err) {
     console.error('S3 upload error:', err);

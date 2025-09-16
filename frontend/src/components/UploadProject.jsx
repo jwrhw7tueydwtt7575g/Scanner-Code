@@ -1,10 +1,18 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 
 export default function UploadProject() {
   const fileInputRef = useRef();
   const [popup, setPopup] = useState(false);
   const [popupMsg, setPopupMsg] = useState('');
-  const [timeline, setTimeline] = useState([]);
+  const [pipelineStep, setPipelineStep] = useState(0);
+  const [pipelineError, setPipelineError] = useState(null);
+  const pipeline = [
+    { label: 'Upload', icon: 'cloud_upload' },
+    { label: 'Schema Inference', icon: 'schema' },
+    { label: 'Cleaning', icon: 'cleaning_services' },
+    { label: 'Writing', icon: 'edit' },
+    { label: 'Neural Format', icon: 'bolt' }
+  ];
 
   const handleSelectFile = () => {
     fileInputRef.current.click();
@@ -14,8 +22,15 @@ export default function UploadProject() {
     const file = e.target.files[0];
     if (!file) return;
     setPopup(true);
-    setPopupMsg('Uploading...');
-    setTimeline([]);
+    setPopupMsg('Pipeline running...');
+    setPipelineStep(0);
+    setPipelineError(null);
+    // Simulate pipeline steps with animation
+    for (let i = 0; i < pipeline.length; i++) {
+      await new Promise(resolve => setTimeout(resolve, 800));
+      setPipelineStep(i);
+    }
+    // Actual upload
     const formData = new FormData();
     formData.append('file', file);
     try {
@@ -26,21 +41,13 @@ export default function UploadProject() {
       const data = await res.json();
       if (res.ok) {
         setPopupMsg(data.message);
-        setTimeline(data.timeline || []);
       } else {
         setPopupMsg(data.message || 'Upload failed');
-        // If error stack is present, add it to timeline
-        let timelineWithError = data.timeline || [];
-        if (timelineWithError.length > 0) {
-          const last = timelineWithError[timelineWithError.length - 1];
-          if (last.error && last.stack) {
-            timelineWithError.push({ step: 'Error Details', time: last.time, error: last.error, stack: last.stack });
-          }
-        }
-        setTimeline(timelineWithError);
+        setPipelineError(data.timeline?.find(t => t.error)?.error || 'Unknown error');
       }
     } catch (err) {
       setPopupMsg('Server error. Please try again later.');
+      setPipelineError(err.message);
     }
   };
 
@@ -83,21 +90,27 @@ export default function UploadProject() {
             <span className="material-icons upload-popup-close-pro" onClick={closePopup}>close</span>
             <h3>Upload Status</h3>
             <div>{popupMsg}</div>
-            {timeline.length > 0 && (
-              <ul className="upload-timeline-pro">
-                {timeline.map((item, idx) => (
-                  <li key={idx}>
-                    <b>{item.step}</b> <span style={{fontSize:'0.8em',color:'#888'}}>{item.time}</span>
-                    {item.error && (
-                      <div style={{color:'red',marginTop:'4px'}}>
-                        <div><b>Error:</b> {item.error}</div>
-                        {item.stack && <pre style={{fontSize:'0.8em',color:'#a00',background:'#f8f8f8',padding:'4px',borderRadius:'4px',overflowX:'auto'}}>{item.stack}</pre>}
-                      </div>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
+            <div className="upload-pipeline-pro" style={{marginTop:'16px'}}>
+              {pipeline.map((step, idx) => {
+                const isActive = idx === pipelineStep;
+                const isComplete = idx < pipelineStep;
+                return (
+                  <div key={idx} style={{display:'flex',alignItems:'center',marginBottom:'12px'}}>
+                    <div style={{width:'16px',height:'16px',borderRadius:'50%',background:isComplete?'#6c63ff':isActive?'#ff9800':'#ccc',marginRight:'12px',transition:'background 0.3s',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                      <span className="material-icons" style={{fontSize:'14px',color:'#fff'}}>{step.icon}</span>
+                    </div>
+                    <div>
+                      <span style={{fontWeight:isActive?'bold':'normal',color:isActive?'#ff9800':'#222'}}>{step.label}</span>
+                      {isActive && <span style={{marginLeft:'8px',color:'#6c63ff'}}>Running...</span>}
+                      {isComplete && <span style={{marginLeft:'8px',color:'#4caf50'}}>Done</span>}
+                    </div>
+                  </div>
+                );
+              })}
+              {pipelineError && (
+                <div style={{color:'red',marginTop:'8px'}}><b>Error:</b> {pipelineError}</div>
+              )}
+            </div>
           </div>
         </div>
       )}
