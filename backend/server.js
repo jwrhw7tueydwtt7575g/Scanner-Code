@@ -23,8 +23,11 @@ mongoose.connect(MONGO_URI, {
 });
 
 
+
 const authRoutes = require('./routes/auth');
+const uploadRoutes = require('./routes/upload');
 app.use('/api/auth', authRoutes);
+app.use('/api/upload', uploadRoutes);
 
 app.get('/', (req, res) => {
     res.send('Backend is running');
