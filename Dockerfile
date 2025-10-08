@@ -1,39 +1,61 @@
-# ARG AIRFLOW_VERSION=2.7.1
-# ARG PYTHON_VERSION=3.11
+# Minimal Dockerfile for scanner services
+# Use a stable, small python base and keep installs minimal by default.
+FROM python:3.11-slim-bullseye
 
-# # Base on the official Airflow image. Change AIRFLOW_VERSION / PYTHON_VERSION as needed.
-# FROM apache/airflow:${AIRFLOW_VERSION}-python${PYTHON_VERSION}
+ARG INSTALL_DEP_CHECK=0
+ARG INSTALL_REQUIREMENTS=0
+ENV DEBIAN_FRONTEND=noninteractive
 
-# # Switch to root to install any system packages and python packages
-# USER root
+WORKDIR /app
 
-# RUN apt-get update \
-# 	&& apt-get install -y --no-install-recommends \
-# 		build-essential \
-# 		git \
-# 		curl \
-# 	&& apt-get clean \
-# 	&& rm -rf /var/lib/apt/lists/*
-# # Switch to the airflow user before installing Python packages; the base image
-# # enforces using the non-root `airflow` user for package installs.
-# USER airflow
+# Install minimal system packages
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl unzip git \
+    && if [ "${INSTALL_DEP_CHECK}" = "1" ]; then apt-get install -y --no-install-recommends openjdk-21-jre-headless unzip; fi \
+    && rm -rf /var/lib/apt/lists/*
 
-# # Install AWS provider, boto3 and awscli using the Airflow constraints that match
-# # the Python major.minor version present in the base image. We avoid upgrading
-# # setuptools/pip here to reduce the chance of breaking preinstalled packages.
-# RUN PY_MINOR=$(python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')") \
-#  && echo "Using Python minor version for constraints: ${PY_MINOR}" \
-#  && pip install --no-cache-dir \
-# 	apache-airflow-providers-amazon \
-# 	boto3 \
-# 	awscli \
-# 	--constraint "https://raw.githubusercontent.com/apache/airflow/constraints-${AIRFLOW_VERSION}/constraints-${PY_MINOR}.txt"
+# Create non-root user and tools dir
+RUN groupadd -r scanner && useradd -r -g scanner scanner \
+    && mkdir -p /home/scanner/tools /app/uploads \
+    && chown -R scanner:scanner /home/scanner /app
+ENV PATH="/home/scanner/.local/bin:/home/scanner/tools:${PATH}"
 
-# # (Optional) Create folders for extras like plugins or logs if your setup needs them
-# ENV AIRFLOW__CORE__LOAD_EXAMPLES=False
+# Copy requirements if present. Installing requirements is optional to keep
+# default builds fast (set INSTALL_REQUIREMENTS=1 to enable installation).
+COPY requirements.txt /app/requirements.txt
+RUN python3 -m pip install --upgrade pip setuptools wheel \
+    && if [ "${INSTALL_REQUIREMENTS}" = "1" ] && [ -f /app/requirements.txt ]; then echo "Installing requirements.txt (this may be large)" && python3 -m pip install --no-cache-dir -r /app/requirements.txt; else echo "Skipping requirements.txt installation"; fi \
+    && python3 -m pip install --no-cache-dir uvicorn fastapi pip-audit
 
-# # Default entrypoint and CMD are inherited from the official image.
-# Airflow Dockerfile compatible with Amazon S3, using Astronomer runtime
-FROM quay.io/astronomer/astro-runtime:7.3.0
+# Install nuclei (small binary) but don't fail the build if fetching fails.
+# Use the releases/latest/download path to avoid parsing GitHub API output.
+RUN set -eux; \
+    NUCLEI_URL="https://github.com/projectdiscovery/nuclei/releases/latest/download/nuclei-linux-amd64.zip"; \
+    curl -fSL "$NUCLEI_URL" -o /tmp/nuclei.zip || true; \
+    if [ -f /tmp/nuclei.zip ]; then \
+        unzip /tmp/nuclei.zip -d /tmp || true; \
+        if [ -f /tmp/nuclei ]; then mv /tmp/nuclei /usr/local/bin/nuclei || true; fi; \
+        chmod +x /usr/local/bin/nuclei || true; \
+        rm -f /tmp/nuclei.zip || true; \
+    fi
 
-RUN pip install apache-airflow-providers-amazon
+# Conditionally install OWASP Dependency-Check (requires Java)
+RUN if [ "${INSTALL_DEP_CHECK}" = "1" ]; then \
+      DC_VER="8.4.0"; \
+      curl -L "https://github.com/jeremylong/DependencyCheck/releases/download/v${DC_VER}/dependency-check-${DC_VER}-release.zip" -o /tmp/dc.zip || true; \
+      if [ -f /tmp/dc.zip ]; then unzip /tmp/dc.zip -d /opt/ || true; rm -f /tmp/dc.zip || true; chmod +x /opt/dependency-check/bin/dependency-check.sh || true; printf '#!/bin/sh\n/opt/dependency-check/bin/dependency-check.sh "$@"\n' > /usr/local/bin/dependency-check || true; chmod +x /usr/local/bin/dependency-check || true; fi; \
+    else echo "Skipping dependency-check installation"; fi
+
+# Copy app and set permissions
+COPY . /app
+RUN chown -R scanner:scanner /app || true
+
+# install entrypoint and make executable
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh || true
+
+USER scanner
+EXPOSE 8000 8001 8002 8003
+
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD ["uvicorn", "python_vuln_scanner:app", "--host", "0.0.0.0", "--port", "8000"]

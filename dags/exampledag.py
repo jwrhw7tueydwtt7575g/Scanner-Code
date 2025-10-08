@@ -20,7 +20,18 @@ first DAG tutorial: https://www.astronomer.io/docs/learn/get-started-with-airflo
 ![Picture of the ISS](https://www.esa.int/var/esa/storage/images/esa_multimedia/images/2010/02/space_station_over_earth/10293696-3-eng-GB/Space_Station_over_Earth_card_full.jpg)
 """
 
-from airflow.sdk.definitions.asset import Asset
+try:
+    from airflow.datasets import Asset
+except Exception:  # pragma: no cover - compatibility shim for older Airflow
+    # Some Airflow installs may not have the Dataset/Asset API. Provide a
+    # lightweight fallback so the DAG can still be parsed and used for local
+    # testing (this does not provide dataset scheduling semantics).
+    class Asset:
+        def __init__(self, name: str):
+            self.name = name
+
+        def __repr__(self) -> str:
+            return f"Asset({self.name!r})"
 from airflow.decorators import dag, task
 from pendulum import datetime
 import requests

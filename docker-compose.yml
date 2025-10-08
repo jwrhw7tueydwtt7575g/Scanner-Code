@@ -1,0 +1,73 @@
+version: '3.8'
+services:
+  python-scanner:
+    build:
+      context: .
+      args:
+        INSTALL_REQUIREMENTS: "1"
+        INSTALL_DEP_CHECK: "0"
+    image: edi/python-vuln-scanner:latest
+    container_name: python_vuln_scanner
+    environment:
+      - AUTO_RUN_EXTERNAL_TOOLS=0
+    volumes:
+      - ./uploads:/app/uploads
+      - ./:/app:ro
+    command: ["uvicorn", "python_vuln_scanner:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  js-scanner:
+    build:
+      context: .
+      args:
+        INSTALL_REQUIREMENTS: "1"
+        INSTALL_DEP_CHECK: "0"
+    image: edi/js-vuln-scanner:latest
+    container_name: js_vuln_scanner
+    environment:
+      - AUTO_RUN_EXTERNAL_TOOLS=0
+    volumes:
+      - ./uploads:/app/uploads
+      - ./:/app:ro
+    command: ["uvicorn", "js_node_vuln_scanner_fastapi:app", "--host", "0.0.0.0", "--port", "8001"]
+    ports:
+      - "8001:8001"
+    restart: unless-stopped
+
+  java-scanner:
+    build:
+      context: .
+      args:
+        INSTALL_REQUIREMENTS: "1"
+        INSTALL_DEP_CHECK: "1"
+    image: edi/java-vuln-scanner:latest
+    container_name: java_vuln_scanner
+    environment:
+      - AUTO_RUN_EXTERNAL_TOOLS=0
+    volumes:
+      - ./uploads:/app/uploads
+      - ./:/app:ro
+    command: ["uvicorn", "java_vuln_scanner_fastapi:app", "--host", "0.0.0.0", "--port", "8002"]
+    ports:
+      - "8002:8002"
+    restart: unless-stopped
+
+  cpp-scanner:
+    build:
+      context: .
+      args:
+        INSTALL_REQUIREMENTS: "1"
+        INSTALL_DEP_CHECK: "0"
+    image: edi/cpp-vuln-scanner:latest
+    container_name: cpp_vuln_scanner
+    environment:
+      - AUTO_RUN_EXTERNAL_TOOLS=0
+    volumes:
+      - ./uploads:/app/uploads
+      - ./:/app:ro
+    command: ["uvicorn", "c_cpp_vuln_scanner_fastapi:app", "--host", "0.0.0.0", "--port", "8003"]
+    ports:
+      - "8003:8003"
+    restart: unless-stopped
